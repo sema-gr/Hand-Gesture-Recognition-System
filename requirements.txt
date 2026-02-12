@@ -1,0 +1,13 @@
+opencv-python
+mediapipe
+numpy
+torch
+torchvision
+onnxruntime
+insightface
+pyttsx3
+scikit-learn
+pillow
+edge-tts
+SpeechRecognition
+PyAudio
