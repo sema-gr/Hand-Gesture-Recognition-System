@@ -1,4 +1,5 @@
 import asyncio
+import platform
 import cv2
 import time
 import webbrowser
@@ -77,6 +78,7 @@ def process_voice_command(command, user_id):
             speak_async("Відкриваю Телеграм")
             try:
                 telegram_path = r"C:\Users\Admin\AppData\Roaming\Telegram Desktop\Telegram.exe"
+                subprocess.Popen('/usr/bin/open -a Telegram', shell=True)
                 if os.path.exists(telegram_path):
                     os.startfile(telegram_path)
                 else:
@@ -88,21 +90,19 @@ def process_voice_command(command, user_id):
             
 
     elif "вихід" in command:
-        speak_async("Бувайте!")
-        time.sleep(2)
+        speak_task("Бувайте!")
         os._exit(0)
 
 # --- БЛОК ОЗВУЧКИ (Edge-TTS) ---
 def speak_task(text):
+    filename = f"voice_{int(time.time())}.mp3"
     try:
-        filename = f"voice_{int(time.time())}.mp3"
         VOICE = "uk-UA-PolinaNeural" 
         
         async def generate():
             communicate = edge_tts.Communicate(text, VOICE)
             await communicate.save(filename)
 
-        # Вирішуємо проблему з asyncio loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(generate())
@@ -113,25 +113,65 @@ def speak_task(text):
             pygame.mixer.music.play()
             while pygame.mixer.music.get_busy():
                 time.sleep(0.1)
-            pygame.mixer.music.unload()
+            
+            pygame.mixer.music.unload()  # Звільняємо файл
+            time.sleep(0.2)             # Коротка пауза для ОС, щоб відпустити дескриптор
             os.remove(filename)
+            print(f"🗑 Тимчасовий файл {filename} видалено")
     except Exception as e:
         print(f"🔊 Помилка звуку: {e}")
+        if os.path.exists(filename):
+            try: os.remove(filename)
+            except: pass
 
 def speak_async(text):
     threading.Thread(target=speak_task, args=(text,), daemon=True).start()
 
 # --- ВІЗУАЛІЗАЦІЯ ТА ПОДІЇ ---
 def draw_ukr_text(img, text, position, font_size=35, color=(0, 255, 0)):
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img_pil = Image.fromarray(img_rgb)
+    h, w = img.shape[:2]
+    current_os = platform.system() # 'Windows', 'Darwin' (Mac) або 'Linux'
+
+    # 1. Адаптивне масштабування
+    if current_os == "Darwin":
+        # На Mac Retina щільність пікселів вища, тому множимо сильніше
+        retina_scale = w / 640 
+        final_font_size = int(font_size * retina_scale * 1.2)
+    else:
+        # На Windows зазвичай достатньо стандартного масштабування
+        scale = w / 1280
+        final_font_size = int(font_size * (scale if scale > 1 else 1))
+
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img_pil)
+    
+    # 2. Вибір шляху до шрифту залежно від ОС
+    if current_os == "Windows":
+        font_path = "C:/Windows/Fonts/arial.ttf"
+    elif current_os == "Darwin":
+        font_path = "/System/Library/Fonts/Supplemental/Arial.ttf"
+    else:
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" # Для Linux
+
     try:
-        font = ImageFont.truetype("arial.ttf", font_size)
+        font = ImageFont.truetype(font_path, final_font_size)
     except:
-        font = ImageFont.load_default()
+        # Якщо файл не знайдено, намагаємося завантажити системний шрифт за назвою
+        try:
+            font = ImageFont.truetype("arial.ttf", final_font_size)
+        except:
+            font = ImageFont.load_default()
+    
     pil_color = (color[2], color[1], color[0])
+    
+    # 3. Малюємо тінь (чорна підкладка)
+    x, y = position
+    offset = max(1, int(final_font_size / 20)) # Товщина тіні залежить від розміру
+    draw.text((x + offset, y + offset), text, font=font, fill=(0, 0, 0))
+    
+    # Малюємо основний текст
     draw.text(position, text, font=font, fill=pil_color)
+    
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
 def handle_event(user_id, gesture, frame):

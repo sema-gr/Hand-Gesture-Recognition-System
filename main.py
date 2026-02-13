@@ -1,3 +1,4 @@
+import platform
 import cv2
 import os
 import numpy as np
@@ -21,18 +22,49 @@ def is_hand_of_face(hand_bbox, face_bbox):
            (fy1 <= hy <= fy2 + padding_y)
 
 def draw_text_ua(frame, text, position, color=(0, 255, 0), font_size=24):
-    img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(img_pil)
+    h, w = frame.shape[:2]
+    current_os = platform.system()
 
-    # Шлях до шрифту (Windows: arial.ttf)
-    font_path = "C:/Windows/Fonts/arial.ttf" 
-    if os.path.exists(font_path):
-        font = ImageFont.truetype(font_path, font_size)
+    # 1. Адаптивне масштабування шрифту
+    # На Mac Retina (Darwin) пікселів більше, тому множимо сильніше
+    if current_os == "Darwin":
+        scale = w / 640
+        final_font_size = int(font_size * scale * 1.5)
     else:
+        # На Windows (та інших) масштабуємо відносно Full HD
+        scale = w / 1280
+        final_font_size = int(font_size * (scale if scale > 1 else 1))
+
+    # 2. Вибір шляху до шрифту
+    if current_os == "Windows":
+        font_path = "C:/Windows/Fonts/arial.ttf"
+    elif current_os == "Darwin":
+        font_path = "/System/Library/Fonts/Supplemental/Arial.ttf"
+    else:
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+    # 3. Завантаження шрифту
+    try:
+        if os.path.exists(font_path):
+            font = ImageFont.truetype(font_path, final_font_size)
+        else:
+            font = ImageFont.truetype("arial.ttf", final_font_size)
+    except:
         font = ImageFont.load_default()
 
-    # PIL: (R, G, B)
-    draw.text(position, text, font=font, fill=(color[2], color[1], color[0]))
+    # 4. Малювання через PIL
+    img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+    
+    # PIL використовує (R, G, B), а OpenCV (B, G, R)
+    # color[2], color[1], color[0] — це конвертація BGR -> RGB
+    fill_color = (color[2], color[1], color[0])
+    
+    # Додаємо обводку/тінь для читабельності (опціонально, але корисно)
+    x, y = position
+    draw.text((x + 1, y + 1), text, font=font, fill=(0, 0, 0))
+    draw.text(position, text, font=font, fill=fill_color)
+    
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
 def load_users_from_dict(data, embedder, recognizer, base_path="data"):

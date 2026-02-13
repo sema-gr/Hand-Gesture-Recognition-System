@@ -72,17 +72,12 @@ project/
 │
 ├── main.py                 # Точка входу
 │
-├── camera/
-│   └── capture.py          # Отримання кадрів з камери
-│
 ├── face/
 │   ├── detector.py         # Детекція облич
 │   ├── embedder.py         # Face embeddings
 │   └── recognizer.py       # Порівняння облич
 │
 ├── gestures/
-│   ├── collect/            # Збір датасету
-│   ├── model/              # Тренування моделей
 │   └── predictor.py        # Розпізнавання жестів
 │
 ├── core/
@@ -90,11 +85,6 @@ project/
 │
 ├── data/
 │   ├── faces/              # Embeddings користувачів
-│   └── gestures/           # Landmarks жестів
-│
-├── models/
-│   ├── face/
-│   └── gesture/
 │
 └── requirements.txt
 ```
@@ -119,6 +109,7 @@ project/
 | ------------ | ------- |
 | 👍 thumbs_up | static  |
 | 👋 wave      | dynamic |
+| ✌️ victory   | static  |
 
 ---
 
@@ -137,6 +128,7 @@ project/
 Система містить **вбудований голосовий асистент**, який реагує на події:
 
 ### 🔊 Що озвучується
+
 - поява знайомого користувача
 - виконання жесту
 - запуск дій (наприклад, відкриття сайту)
@@ -144,6 +136,7 @@ project/
 ---
 
 ### ⚙️ Технічні деталі
+
 - використовується **gTTS (Google Text-to-Speech)**
 - мова: **українська**
 - озвучка запускається **в окремому потоці**
@@ -156,7 +149,9 @@ project/
 pip install -r requirements.txt
 python main.py
 ```
+
 Після запуску:
+
 - відкривається камера
 - видно bounding box обличчя з імʼям
 - відображається скелет руки
