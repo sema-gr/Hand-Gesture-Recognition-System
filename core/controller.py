@@ -1,5 +1,6 @@
 import asyncio
 import platform
+import sqlite3
 import cv2
 import time
 import webbrowser
@@ -11,6 +12,8 @@ import pygame
 from PIL import ImageFont, ImageDraw, Image
 import speech_recognition as sr
 import subprocess
+from utils.finder import find_app_path
+from utils.voice_engine import speak_async, speak_task
 
 # Ініціалізація pygame mixer
 pygame.mixer.init()
@@ -63,69 +66,57 @@ def start_voice_assistant():
         print(f"❌ Не вдалося запустити мікрофон: {e}")
 
 def process_voice_command(command, user_id):
-    """Обробка команд (user_id приходить як аргумент)"""
-    # Спробуймо додати дебаг-принт, щоб бачити, що функція викликана
-    print(f"⚙️ Виконую команду '{command}' для '{user_id}'")
+    print(f"⚙️ Виконую команду '{command}'", flush=True)
     current_focus = state.active_user if state.active_user else user_id
-    if "хто я" in command:
-        if current_focus:
-            speak_async(f"Ви — {current_focus}. Я впізнала вас за жестом.")
-        else:
-            speak_async("Я не впевнена. Будь ласка, покажіть жест, щоб я зрозуміла, хто запитує.")
+    
+    conn = sqlite3.connect('assistant.db')
+    cursor = conn.cursor()
 
-    elif "телеграм" in command or "telegram" in command:
-        if current_focus:
-            speak_async("Відкриваю Телеграм")
-            try:
-                telegram_path = r"C:\Users\Admin\AppData\Roaming\Telegram Desktop\Telegram.exe"
-                subprocess.Popen('/usr/bin/open -a Telegram', shell=True)
-                if os.path.exists(telegram_path):
-                    os.startfile(telegram_path)
-                else:
-                    speak_async("Я не можу знайти Telegram на цьому комп'ютері")
-            except:
-                subprocess.Popen('start "" "C:\\Users\\Admin\\AppData\\Roaming\\Telegram Desktop\\Telegram.exe"', shell=True)
-        else:
-            speak_async("Будь ласка, авторизуйтесь жестом для доступу до додатку.")
-            
+    # 1. Перевірка простих команд із бази
+    cursor.execute("SELECT response FROM commands WHERE ? LIKE '%' || keyword || '%'", (command,))
+    cmd_row = cursor.fetchone()
+    if cmd_row:
+        response = cmd_row[0].replace("{user}", str(current_focus))
+        speak_async(response)
+        conn.close()
+        return
 
+    # 2. Перевірка додатків із бази
+    cursor.execute("SELECT app_name, path FROM apps WHERE ? LIKE '%' || keyword || '%'", (command,))
+    app_row = cursor.fetchone()
+    
+    if app_row:
+        app_name, saved_path = app_row
+        if not current_focus:
+            speak_async("Будь ласка, авторизуйтесь жестом для доступу.")
+            conn.close()
+            return
+
+        speak_async(f"Відкриваю {app_name}")
+        
+        # Логіка для Mac
+        if platform.system() == "Darwin":
+            clean_name = app_name.replace(".exe", "")
+            subprocess.Popen(['/usr/bin/open', '-a', clean_name])
+        
+        # Логіка для Windows
+        else:
+            path = saved_path if saved_path and os.path.exists(saved_path) else find_app_path(app_name)
+            if path:
+                os.startfile(path)
+                # Оновлюємо шлях у БД, щоб наступного разу не шукати довго
+                cursor.execute("UPDATE apps SET path = ? WHERE app_name = ?", (path, app_name))
+                conn.commit()
+            else:
+                speak_async(f"Я не знайшла {app_name} на диску")
+
+    # 3. Спеціальна команда виходу
     elif "вихід" in command:
+        conn.close()
         speak_task("Бувайте!")
         os._exit(0)
 
-# --- БЛОК ОЗВУЧКИ (Edge-TTS) ---
-def speak_task(text):
-    filename = f"voice_{int(time.time())}.mp3"
-    try:
-        VOICE = "uk-UA-PolinaNeural" 
-        
-        async def generate():
-            communicate = edge_tts.Communicate(text, VOICE)
-            await communicate.save(filename)
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(generate())
-        loop.close()
-
-        if os.path.exists(filename):
-            pygame.mixer.music.load(filename)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                time.sleep(0.1)
-            
-            pygame.mixer.music.unload()  # Звільняємо файл
-            time.sleep(0.2)             # Коротка пауза для ОС, щоб відпустити дескриптор
-            os.remove(filename)
-            print(f"🗑 Тимчасовий файл {filename} видалено")
-    except Exception as e:
-        print(f"🔊 Помилка звуку: {e}")
-        if os.path.exists(filename):
-            try: os.remove(filename)
-            except: pass
-
-def speak_async(text):
-    threading.Thread(target=speak_task, args=(text,), daemon=True).start()
+    conn.close()
 
 # --- ВІЗУАЛІЗАЦІЯ ТА ПОДІЇ ---
 def draw_ukr_text(img, text, position, font_size=35, color=(0, 255, 0)):
